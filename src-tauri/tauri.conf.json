@@ -29,9 +29,6 @@
     "active": true,
     "targets": "all",
     "publisher": "",
-    "icon": [
-      "icons/icon.ico"
-    ],
     "resources": [],
     "externalBin": [],
     "copyright": "",
