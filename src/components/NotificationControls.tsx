@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Bell, BellOff, TestTube } from 'lucide-react';
+import { Bell, BellOff, TestTube, Power, PowerOff } from 'lucide-react';
 
 export default function NotificationControls() {
   const [isEnabled, setIsEnabled] = useState(true); // Default to enabled
   const [loading, setLoading] = useState(false);
+  const [startupEnabled, setStartupEnabled] = useState(false);
+  const [startupLoading, setStartupLoading] = useState(false);
 
   useEffect(() => {
     checkNotificationStatus();
+    checkStartupStatus();
   }, []);
 
   const checkNotificationStatus = async () => {
@@ -16,6 +19,15 @@ export default function NotificationControls() {
       setIsEnabled(status);
     } catch (error) {
       console.error('Failed to check notification status:', error);
+    }
+  };
+
+  const checkStartupStatus = async () => {
+    try {
+      const status = await invoke<boolean>('get_startup_enabled');
+      setStartupEnabled(status);
+    } catch (error) {
+      console.error('Failed to check startup status:', error);
     }
   };
 
@@ -36,6 +48,23 @@ export default function NotificationControls() {
     }
   };
 
+  const toggleStartup = async () => {
+    setStartupLoading(true);
+    try {
+      if (startupEnabled) {
+        await invoke('disable_startup');
+        setStartupEnabled(false);
+      } else {
+        await invoke('enable_startup');
+        setStartupEnabled(true);
+      }
+    } catch (error) {
+      console.error('Failed to toggle startup:', error);
+    } finally {
+      setStartupLoading(false);
+    }
+  };
+
   const sendTestNotification = async () => {
     try {
       await invoke('send_test_notification');
@@ -45,34 +74,59 @@ export default function NotificationControls() {
   };
 
   return (
-    <div className="flex flex-col gap-3 p-4 bg-white/10 rounded-lg backdrop-blur-sm">
-      <div className="flex items-center gap-2">
-        <button
-          onClick={toggleNotifications}
-          disabled={loading}
-          className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors ${
-            isEnabled
-              ? 'bg-green-500 hover:bg-green-600 text-white'
-              : 'bg-gray-500 hover:bg-gray-600 text-white'
-          } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
-        >
-          {isEnabled ? <Bell size={16} /> : <BellOff size={16} />}
-          {loading ? 'Loading...' : isEnabled ? 'Notifications On' : 'Notifications Off'}
-        </button>
+    <div className="flex flex-col gap-4 p-4 bg-white/10 rounded-lg backdrop-blur-sm">
+      {/* Notification Controls */}
+      <div>
+        <div className="flex items-center gap-2 mb-2">
+          <button
+            onClick={toggleNotifications}
+            disabled={loading}
+            className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors ${
+              isEnabled
+                ? 'bg-green-500 hover:bg-green-600 text-white'
+                : 'bg-gray-500 hover:bg-gray-600 text-white'
+            } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            {isEnabled ? <Bell size={16} /> : <BellOff size={16} />}
+            {loading ? 'Loading...' : isEnabled ? 'Notifications On' : 'Notifications Off'}
+          </button>
+          
+          <button
+            onClick={sendTestNotification}
+            className="flex items-center gap-2 px-3 py-2 rounded-md bg-blue-500 hover:bg-blue-600 text-white transition-colors"
+            title="Send test notification"
+          >
+            <TestTube size={16} />
+            Test
+          </button>
+        </div>
         
-        <button
-          onClick={sendTestNotification}
-          className="flex items-center gap-2 px-3 py-2 rounded-md bg-blue-500 hover:bg-blue-600 text-white transition-colors"
-          title="Send test notification"
-        >
-          <TestTube size={16} />
-          Test
-        </button>
+        <span className="text-sm text-gray-300">
+          {isEnabled ? 'You\'ll get reminders every 6 hours' : 'Click to enable 6-hour reminders'}
+        </span>
       </div>
-      
-      <span className="text-sm text-gray-300">
-        {isEnabled ? 'You\'ll get reminders every 6 hours' : 'Click to enable 6-hour reminders'}
-      </span>
+
+      {/* Startup Controls */}
+      <div>
+        <div className="flex items-center gap-2 mb-2">
+          <button
+            onClick={toggleStartup}
+            disabled={startupLoading}
+            className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors ${
+              startupEnabled
+                ? 'bg-purple-500 hover:bg-purple-600 text-white'
+                : 'bg-gray-500 hover:bg-gray-600 text-white'
+            } ${startupLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            {startupEnabled ? <Power size={16} /> : <PowerOff size={16} />}
+            {startupLoading ? 'Loading...' : startupEnabled ? 'Startup Enabled' : 'Startup Disabled'}
+          </button>
+        </div>
+        
+        <span className="text-sm text-gray-300">
+          {startupEnabled ? 'App will start automatically with Windows' : 'Click to enable automatic startup'}
+        </span>
+      </div>
     </div>
   );
 }

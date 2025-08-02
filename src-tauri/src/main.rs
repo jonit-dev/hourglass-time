@@ -6,6 +6,7 @@ use tauri::{AppHandle, State, Manager};
 use tokio::time::{interval, Duration};
 use tauri_plugin_notification::NotificationExt;
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
+use auto_launch::AutoLaunchBuilder;
 
 struct NotificationState {
     is_enabled: Arc<Mutex<bool>>,
@@ -115,6 +116,54 @@ async fn send_test_notification(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+async fn get_startup_enabled() -> Result<bool, String> {
+    let exe_path = std::env::current_exe()
+        .map_err(|e| e.to_string())?
+        .to_string_lossy()
+        .to_string();
+    
+    let auto = AutoLaunchBuilder::new()
+        .set_app_name("Hourglass")
+        .set_app_path(&exe_path)
+        .build()
+        .map_err(|e| e.to_string())?;
+    
+    auto.is_enabled().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn enable_startup() -> Result<(), String> {
+    let exe_path = std::env::current_exe()
+        .map_err(|e| e.to_string())?
+        .to_string_lossy()
+        .to_string();
+    
+    let auto = AutoLaunchBuilder::new()
+        .set_app_name("Hourglass")
+        .set_app_path(&exe_path)
+        .build()
+        .map_err(|e| e.to_string())?;
+    
+    auto.enable().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn disable_startup() -> Result<(), String> {
+    let exe_path = std::env::current_exe()
+        .map_err(|e| e.to_string())?
+        .to_string_lossy()
+        .to_string();
+    
+    let auto = AutoLaunchBuilder::new()
+        .set_app_name("Hourglass")
+        .set_app_path(&exe_path)
+        .build()
+        .map_err(|e| e.to_string())?;
+    
+    auto.disable().map_err(|e| e.to_string())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -124,7 +173,10 @@ fn main() {
             get_notification_status,
             start_notifications,
             stop_notifications,
-            send_test_notification
+            send_test_notification,
+            get_startup_enabled,
+            enable_startup,
+            disable_startup
         ])
         .setup(|app| {
             // Setup system tray only if we have a default icon
