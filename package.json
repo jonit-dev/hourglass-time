@@ -10,8 +10,9 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "deploy": "tauri build --target x86_64-pc-windows-msvc",
-    "deploy:windows": "tauri build --target x86_64-pc-windows-msvc",
+    "deploy": "tauri build --target x86_64-pc-windows-msvc --bundles nsis",
+    "deploy:windows": "tauri build --target x86_64-pc-windows-msvc --bundles nsis",
+    "deploy:windows-msi": "tauri build --target x86_64-pc-windows-msvc --bundles msi",
     "deploy:linux": "tauri build --target x86_64-unknown-linux-gnu"
   },
   "dependencies": {

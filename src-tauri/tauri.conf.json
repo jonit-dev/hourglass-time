@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2.0.0",
   "productName": "Hourglass",
-  "version": "0.0.0",
-  "identifier": "com.hourglass.app",
+  "version": "0.1.0",
+  "identifier": "com.hourglass.desktop",
   "build": {
     "beforeDevCommand": "yarn dev",
     "beforeBuildCommand": "yarn build",
@@ -35,13 +35,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "publisher": "",
+    "publisher": "Hourglass Developer",
     "resources": [],
     "externalBin": [],
-    "copyright": "",
+    "copyright": "© 2024 Hourglass",
     "category": "DeveloperTool",
-    "shortDescription": "",
-    "longDescription": "",
+    "shortDescription": "A productivity timer application",
+    "longDescription": "Hourglass is a modern productivity timer application built with Tauri",
     "macOS": {
       "frameworks": [],
       "minimumSystemVersion": "",
