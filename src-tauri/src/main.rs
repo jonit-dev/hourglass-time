@@ -127,24 +127,27 @@ fn main() {
             send_test_notification
         ])
         .setup(|app| {
-            // Setup system tray
-            let _tray = TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
-                .title("Hourglass")
-                .tooltip("Hourglass - Time Tracker")
-                .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click { .. } = event {
-                        let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
+            // Setup system tray only if we have a default icon
+            if let Some(icon) = app.default_window_icon() {
+                let _tray = TrayIconBuilder::new()
+                    .icon(icon.clone())
+                    .title("Hourglass")
+                    .tooltip("Hourglass - Time Tracker")
+                    .on_tray_icon_event(|tray, event| {
+                        if let TrayIconEvent::Click { .. } = event {
+                            let app = tray.app_handle();
+                            // Get the first available window since no specific label is set
+                            if let Some(window) = app.webview_windows().values().next() {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
                         }
-                    }
-                })
-                .build(app)?;
+                    })
+                    .build(app)?;
+            }
 
             // Configure window close behavior to minimize to tray
-            if let Some(window) = app.get_webview_window("main") {
+            if let Some(window) = app.webview_windows().values().next() {
                 let window_clone = window.clone();
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
