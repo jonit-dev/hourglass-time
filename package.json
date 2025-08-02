@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "deploy": "tauri build"
+    "deploy": "tauri build",
+    "deploy:windows": "tauri build --target nsis msi"
   },
   "dependencies": {
     "@react-three/drei": "^9.88.0",
