@@ -27,6 +27,85 @@ dist-ssr
 # Tauri
 src-tauri/target/
 src-tauri/Cargo.lock
+src-tauri/gen/
+WixTools/
+*.msi
+*.deb
+*.rpm
+*.AppImage
+*.dmg
+*.app
 
 # Generated files
 create-icons.js
+
+# Build outputs
+build/
+out/
+*.tsbuildinfo
+
+# OS files
+Thumbs.db
+*.tmp
+*.temp
+
+# IDE files
+*.swp
+*.swo
+*~
+.vscode/settings.json
+
+# Dependencies
+.yarn/
+.pnp.*
+yarn-error.log
+
+# Cache directories
+.cache/
+.parcel-cache/
+.eslintcache
+.stylelintcache
+
+# Temporary files
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+.nyc_output
+
+# Runtime data
+pids
+*.pid
+*.seed
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Microbundle cache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# dotenv environment variables file
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Stores VSCode versions used for testing VSCode extensions
+.vscode-test
