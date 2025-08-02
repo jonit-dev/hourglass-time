@@ -6,8 +6,20 @@ import { useCountdown } from './hooks/useCountdown';
 import { Hourglass, Sparkles } from 'lucide-react';
 
 function App() {
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  // Calculate default dates: June 27th, 2025 and 48 weeks later
+  const getDefaultDates = () => {
+    const startDate = new Date('2025-06-27T09:00');
+    const endDate = new Date(startDate.getTime() + (48 * 7 * 24 * 60 * 60 * 1000)); // 48 weeks later
+    
+    return {
+      start: startDate.toISOString().slice(0, 16),
+      end: endDate.toISOString().slice(0, 16)
+    };
+  };
+
+  const defaultDates = getDefaultDates();
+  const [startDate, setStartDate] = useState(defaultDates.start);
+  const [endDate, setEndDate] = useState(defaultDates.end);
   
   const { timeLeft, isActive, isExpired, progress } = useCountdown(startDate, endDate);
 
