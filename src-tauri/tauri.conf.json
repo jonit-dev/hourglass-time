@@ -56,6 +56,9 @@
   "plugins": {
     "updater": {
       "active": false
+    },
+    "notification": {
+      "identifier": "com.hourglass.app"
     }
   }
 }

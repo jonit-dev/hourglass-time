@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { HourglassScene } from './components/HourglassScene';
 import { DateInput } from './components/DateInput';
 import { CountdownDisplay } from './components/CountdownDisplay';
+import NotificationControls from './components/NotificationControls';
 import { useCountdown } from './hooks/useCountdown';
 import { Hourglass, Sparkles } from 'lucide-react';
 
@@ -104,6 +105,8 @@ function App() {
               isActive={isActive}
               isExpired={isExpired}
             />
+
+            <NotificationControls />
           </div>
 
           {/* Hourglass Scene */}
