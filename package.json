@@ -7,11 +7,15 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "deploy": "tauri build"
   },
   "dependencies": {
     "@react-three/drei": "^9.88.0",
     "@react-three/fiber": "^8.15.0",
+    "@react-three/rapier": "^2.1.0",
     "@types/three": "^0.178.1",
     "lucide-react": "^0.344.0",
     "react": "^18.3.1",
@@ -20,6 +24,8 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.9.1",
+    "@tauri-apps/api": "^2.7.0",
+    "@tauri-apps/cli": "^2.7.1",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",

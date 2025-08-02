@@ -23,3 +23,10 @@ dist-ssr
 *.sln
 *.sw?
 .env
+
+# Tauri
+src-tauri/target/
+src-tauri/Cargo.lock
+
+# Generated files
+create-icons.js

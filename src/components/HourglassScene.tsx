@@ -134,13 +134,15 @@ function SandParticles({ timeProgress, isActive, startDate, endDate }: {
   const bottomSandRef = useRef<THREE.Points>(null);
   const fallingRef = useRef<THREE.Points>(null);
   
-  // Increased particle count for better density
-  const PARTICLE_COUNT = 2000; // 10x more particles
+  // Realistic particle count with proper physics
+  const PARTICLE_COUNT = 3000; // Balanced for performance and realism
   const particleSystem = useRef({
     positions: new Float32Array(PARTICLE_COUNT * 3),
     velocities: new Float32Array(PARTICLE_COUNT * 3),
     lifetimes: new Float32Array(PARTICLE_COUNT),
     colors: new Float32Array(PARTICLE_COUNT * 3),
+    settled: new Float32Array(PARTICLE_COUNT), // Track if particle has settled
+    restY: new Float32Array(PARTICLE_COUNT), // Resting Y position for settled particles
   });
 
   // Glass radius constraint function
@@ -182,44 +184,44 @@ function SandParticles({ timeProgress, isActive, startDate, endDate }: {
     return { positions, colors };
   };
 
-  // Static sand geometries with more particles
-  const topSandData = useMemo(() => createSandParticles(3000, 0.25, 1.4, true), []);
-  const bottomSandData = useMemo(() => createSandParticles(3000, -1.45, -0.2, false), []);
+  // Static sand geometries with massive particle count
+  const topSandData = useMemo(() => createSandParticles(20000, 0.25, 1.4, true), []);
+  const bottomSandData = useMemo(() => createSandParticles(20000, -1.45, -0.2, false), []);
   
   // Previous time progress to detect changes
   const prevTimeProgress = useRef(timeProgress);
 
-  // Falling particles initialization with better distribution
+  // Realistic particle initialization
   useEffect(() => {
-    const { positions, velocities, lifetimes, colors } = particleSystem.current;
+    const { positions, velocities, lifetimes, colors, settled, restY } = particleSystem.current;
     
     for (let i = 0; i < PARTICLE_COUNT; i++) {
       const i3 = i * 3;
       
-      // Stagger initialization to create continuous flow
-      const phase = (i / PARTICLE_COUNT) * Math.PI * 2;
-      const spawnY = 0.3 + Math.random() * 1.0;
-      const maxR = glassRadiusAtY(spawnY) * 0.85;
-      const spawnR = Math.random() * maxR * 0.8; // Concentrated toward center
+      // Start particles in top chamber
+      const spawnY = 0.5 + Math.random() * 0.8;
+      const maxR = glassRadiusAtY(spawnY) * 0.7;
+      const spawnR = Math.random() * maxR;
       const ang = Math.random() * Math.PI * 2;
       
       positions[i3] = Math.cos(ang) * spawnR;
       positions[i3 + 1] = spawnY;
       positions[i3 + 2] = Math.sin(ang) * spawnR;
       
-      // Initial velocity with slight downward bias
-      velocities[i3] = (Math.random() - 0.5) * 0.0002;
-      velocities[i3 + 1] = -Math.random() * 0.002 - 0.001;
-      velocities[i3 + 2] = (Math.random() - 0.5) * 0.0002;
+      // Minimal initial velocity
+      velocities[i3] = (Math.random() - 0.5) * 0.0001;
+      velocities[i3 + 1] = -Math.random() * 0.0005;
+      velocities[i3 + 2] = (Math.random() - 0.5) * 0.0001;
       
-      // Varied lifetimes for natural flow
-      lifetimes[i] = Math.random() * 500 + phase * 50;
+      lifetimes[i] = Math.random() * 300;
+      settled[i] = 0; // Not settled initially
+      restY[i] = -10; // Invalid rest position
       
-      // Sand color variation
-      const brightness = 0.8 + Math.random() * 0.4;
-      colors[i3] = brightness * 1.0; // R
-      colors[i3 + 1] = brightness * 0.85; // G
-      colors[i3 + 2] = brightness * 0.5; // B
+      // Natural sand colors
+      const brightness = 0.9 + Math.random() * 0.2;
+      colors[i3] = brightness;
+      colors[i3 + 1] = brightness * 0.85;
+      colors[i3 + 2] = brightness * 0.6;
     }
   }, []);
 
@@ -232,40 +234,65 @@ function SandParticles({ timeProgress, isActive, startDate, endDate }: {
     return Math.max(0, Math.min(1, elapsed / total));
   }, [startDate, endDate, timeProgress]);
 
-  // Animation loop with improved physics
+  // Animation loop with realistic physics
   useFrame(() => {
     if (!fallingRef.current) return;
 
-    const { positions, velocities, lifetimes } = particleSystem.current;
-    const margin = 0.012;
-    const gravity = -0.0018; // Stronger gravity for better flow
-    const damping = 0.992; // Air resistance
-    const funnelHalfH = 0.2;
-    const funnelStrength = 0.0035; // Stronger funnel
+    const { positions, velocities, lifetimes, settled, restY } = particleSystem.current;
+    const margin = 0.015;
+    const gravity = -0.003; // Strong gravity for natural fall
+    const damping = 0.95; // High air resistance
+    const friction = 0.7; // High surface friction
+    const restitution = 0.1; // Low bounce
+    const funnelHalfH = 0.15;
+    const funnelStrength = 0.002;
     const neckY = 0.0;
-    const neckR = 0.028; // Tighter neck for controlled flow
+    const neckR = 0.03;
     
-    // Flow rate based on date progress and activity
+    // Flow control
     const baseFlowRate = startDate && endDate ? dateProgress : timeProgress;
-    const flowRate = isActive ? baseFlowRate : baseFlowRate * 0.1;
-    const activeParticles = Math.floor(PARTICLE_COUNT * (0.3 + flowRate * 0.7));
+    const flowRate = isActive ? Math.min(baseFlowRate, 0.95) : baseFlowRate * 0.1;
+    const activeParticles = Math.floor(PARTICLE_COUNT * (0.4 + flowRate * 0.6));
+    
+    // Pile tracking for realistic stacking
+    const pileMap = new Map<string, number>(); // Grid-based height map
+    const gridSize = 0.04;
+    
+    // First pass: build height map from settled particles
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      const i3 = i * 3;
+      if (settled[i] > 0.5) {
+        const x = positions[i3];
+        const z = positions[i3 + 2];
+        const gridX = Math.floor(x / gridSize);
+        const gridZ = Math.floor(z / gridSize);
+        const key = `${gridX},${gridZ}`;
+        const currentHeight = pileMap.get(key) || -1.5;
+        pileMap.set(key, Math.max(currentHeight, restY[i]));
+      }
+    }
 
-    // Update falling particles with improved physics
+    // Second pass: update particles with realistic physics
     for (let i = 0; i < activeParticles; i++) {
       const i3 = i * 3;
+      const isSettled = settled[i] > 0.5;
       
-      // Apply gravity with delta time
-      velocities[i3 + 1] += gravity * (1 + Math.random() * 0.1);
-      
-      // Add slight turbulence for realism
-      const turbulence = 0.00008;
-      velocities[i3] += (Math.random() - 0.5) * turbulence;
-      velocities[i3 + 2] += (Math.random() - 0.5) * turbulence;
-      
-      // Update positions
-      positions[i3] += velocities[i3];
-      positions[i3 + 1] += velocities[i3 + 1];
-      positions[i3 + 2] += velocities[i3 + 2];
+      if (!isSettled) {
+        // Apply gravity only to falling particles
+        velocities[i3 + 1] += gravity;
+        
+        // Update positions
+        positions[i3] += velocities[i3];
+        positions[i3 + 1] += velocities[i3 + 1];
+        positions[i3 + 2] += velocities[i3 + 2];
+      } else {
+        // Settled particles stay put
+        positions[i3 + 1] = restY[i];
+        velocities[i3] = 0;
+        velocities[i3 + 1] = 0;
+        velocities[i3 + 2] = 0;
+        continue;
+      }
       
       const x = positions[i3];
       const y = positions[i3 + 1];
@@ -311,76 +338,80 @@ function SandParticles({ timeProgress, isActive, startDate, endDate }: {
         }
       }
       
-      // Realistic pile formation with angle of repose
+      // Realistic ground collision and pile formation
       if (y < -1.0) {
-        const pileBaseY = -1.35;
-        const angleOfRepose = 0.58; // ~30 degrees for sand
-        const pileHeight = timeProgress * 0.5; // Pile grows with progress
-        const maxRadius = 0.35;
-        const pileRadius = Math.min(maxRadius, pileHeight / angleOfRepose);
-        const pileY = pileBaseY + Math.max(0, pileHeight * (1 - r / pileRadius));
+        const gridX = Math.floor(x / gridSize);
+        const gridZ = Math.floor(z / gridSize);
+        const key = `${gridX},${gridZ}`;
+        const groundHeight = pileMap.get(key) || -1.4;
+        const particleRadius = 0.015;
+        const targetHeight = groundHeight + particleRadius;
         
-        if (y < pileY && r < pileRadius) {
-          positions[i3 + 1] = pileY + 0.003 + Math.random() * 0.002;
+        if (y < targetHeight) {
+          // Particle has hit ground or other particles
+          positions[i3 + 1] = targetHeight;
           
-          // Realistic bounce and friction
-          const restitution = 0.1 + Math.random() * 0.1;
-          velocities[i3 + 1] = Math.max(0, -velocities[i3 + 1] * restitution);
-          
-          // Lateral friction
-          const friction = 0.3 + Math.random() * 0.2;
-          velocities[i3] *= friction;
-          velocities[i3 + 2] *= friction;
-          
-          // Natural settling with avalanche behavior
-          const slopeAngle = Math.atan2(pileHeight, r);
-          if (slopeAngle > angleOfRepose && r > 0.05) {
-            const avalanche = 0.002;
-            velocities[i3] -= (x / r) * avalanche;
-            velocities[i3 + 2] -= (z / r) * avalanche;
+          // Check if particle should settle
+          const speed = Math.sqrt(velocities[i3]*velocities[i3] + velocities[i3+1]*velocities[i3+1] + velocities[i3+2]*velocities[i3+2]);
+          if (speed < 0.008) {
+            // Settle the particle
+            settled[i] = 1;
+            restY[i] = targetHeight;
+            velocities[i3] = 0;
+            velocities[i3 + 1] = 0;
+            velocities[i3 + 2] = 0;
+            
+            // Update height map
+            pileMap.set(key, targetHeight);
+          } else {
+            // Bounce with high friction
+            velocities[i3 + 1] = Math.abs(velocities[i3 + 1]) * restitution;
+            velocities[i3] *= friction;
+            velocities[i3 + 2] *= friction;
           }
         }
       }
       
       // Top ceiling
-      if (y > 1.45) {
-        positions[i3 + 1] = 1.45;
-        velocities[i3 + 1] *= -0.2;
+      if (y > 1.4) {
+        positions[i3 + 1] = 1.4;
+        velocities[i3 + 1] = -Math.abs(velocities[i3 + 1]) * 0.3;
       }
       
-      // Damping
-      velocities[i3] *= damping;
-      velocities[i3 + 1] *= damping;
-      velocities[i3 + 2] *= damping;
+      // Apply damping to falling particles only
+      if (!isSettled) {
+        velocities[i3] *= damping;
+        velocities[i3 + 1] *= damping;
+        velocities[i3 + 2] *= damping;
+      }
       
       lifetimes[i] += 1;
       
-      // Reset particles based on flow rate
-      if (positions[i3 + 1] < -1.5 || lifetimes[i] > 600) {
-        // Only respawn if we have sand left in top chamber
+      // Respawn particles when they exit or get too old
+      if (positions[i3 + 1] < -1.6 || lifetimes[i] > 400) {
         const sandRemaining = 1 - (startDate && endDate ? dateProgress : timeProgress);
-        if (sandRemaining > 0.01 && Math.random() < flowRate) {
-          const spawnY = 0.4 + Math.random() * 0.9 * sandRemaining;
-          const maxR = glassRadiusAtY(spawnY) * 0.7;
-          const spawnR = Math.random() * maxR * Math.random(); // Bias toward center
+        if (sandRemaining > 0.01 && Math.random() < flowRate * 0.5) {
+          // Respawn in top chamber
+          const spawnY = 0.5 + Math.random() * 0.7 * sandRemaining;
+          const maxR = glassRadiusAtY(spawnY) * 0.6;
+          const spawnR = Math.random() * maxR;
           const ang = Math.random() * Math.PI * 2;
           
           positions[i3] = Math.cos(ang) * spawnR;
           positions[i3 + 1] = spawnY;
           positions[i3 + 2] = Math.sin(ang) * spawnR;
           
-          // Variable initial velocity based on flow rate
-          velocities[i3] = (Math.random() - 0.5) * 0.0003;
-          velocities[i3 + 1] = -0.002 - Math.random() * 0.003 * flowRate;
-          velocities[i3 + 2] = (Math.random() - 0.5) * 0.0003;
+          velocities[i3] = (Math.random() - 0.5) * 0.0002;
+          velocities[i3 + 1] = -Math.random() * 0.001;
+          velocities[i3 + 2] = (Math.random() - 0.5) * 0.0002;
           
+          settled[i] = 0;
+          restY[i] = -10;
           lifetimes[i] = 0;
         } else {
-          // Park inactive particles out of view
+          // Hide particle
           positions[i3 + 1] = -10;
-          velocities[i3] = 0;
-          velocities[i3 + 1] = 0;
-          velocities[i3 + 2] = 0;
+          settled[i] = 1;
         }
       }
     }
@@ -393,10 +424,10 @@ function SandParticles({ timeProgress, isActive, startDate, endDate }: {
       fallingRef.current.geometry.attributes.color.needsUpdate = true;
     }
 
-    // Time-based depletion/refill linked to date progress
+    // Bottom sand amount directly represents progress percentage
     const progress = startDate && endDate ? dateProgress : timeProgress;
-    const topSandAmount = THREE.MathUtils.smoothstep(1 - progress, 0, 1);
-    const bottomSandAmount = THREE.MathUtils.smoothstep(progress, 0, 1);
+    const topSandAmount = Math.max(0, 1 - progress); // Top depletes as progress increases
+    const bottomSandAmount = progress; // Bottom amount = exact progress percentage
     
     if (topSandRef.current) {
       (topSandRef.current.material as THREE.PointsMaterial).opacity = topSandAmount;
@@ -439,12 +470,12 @@ function SandParticles({ timeProgress, isActive, startDate, endDate }: {
 
   const sandMaterial = useMemo(() => 
     new THREE.PointsMaterial({
-      size: 0.04, // Smaller for more particles
+      size: 0.04, // Larger for better visibility and realistic sand grains
       sizeAttenuation: true,
       vertexColors: true,
       transparent: true,
-      opacity: 0.95,
-      depthWrite: false,
+      opacity: 1.0,
+      depthWrite: true, // Enable depth for realistic layering
       alphaTest: 0.1,
       blending: THREE.NormalBlending,
     }), []
@@ -452,14 +483,14 @@ function SandParticles({ timeProgress, isActive, startDate, endDate }: {
 
   const fallingMaterial = useMemo(() =>
     new THREE.PointsMaterial({
-      size: 0.035, // Smaller particles
+      size: 0.035, // Visible falling particles
       sizeAttenuation: true,
       vertexColors: true,
       transparent: true,
       opacity: 0.9,
-      depthWrite: false,
-      alphaTest: 0.05,
-      blending: THREE.AdditiveBlending,
+      depthWrite: true,
+      alphaTest: 0.1,
+      blending: THREE.NormalBlending,
     }), []
   );
 
