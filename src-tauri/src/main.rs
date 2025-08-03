@@ -7,10 +7,24 @@ use tokio::time::{interval, Duration};
 use tauri_plugin_notification::NotificationExt;
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use auto_launch::AutoLaunchBuilder;
+use serde::{Deserialize, Serialize};
+use chrono::{DateTime, Utc};
 
 struct NotificationState {
     is_enabled: Arc<Mutex<bool>>,
     handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
+    start_date: Arc<Mutex<Option<String>>>,
+    end_date: Arc<Mutex<Option<String>>>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct TimeRemaining {
+    days: i64,
+    hours: i64,
+    minutes: i64,
+    seconds: i64,
+    total_ms: i64,
+    is_expired: bool,
 }
 
 impl Default for NotificationState {
@@ -18,6 +32,8 @@ impl Default for NotificationState {
         Self {
             is_enabled: Arc::new(Mutex::new(true)), // Enable by default
             handle: Arc::new(Mutex::new(None)),
+            start_date: Arc::new(Mutex::new(None)),
+            end_date: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -26,6 +42,67 @@ impl Default for NotificationState {
 async fn get_notification_status(state: State<'_, NotificationState>) -> Result<bool, String> {
     let is_enabled = state.is_enabled.lock().unwrap();
     Ok(*is_enabled)
+}
+
+#[tauri::command]
+async fn set_timer_dates(
+    state: State<'_, NotificationState>,
+    start_date: String,
+    end_date: String
+) -> Result<(), String> {
+    {
+        let mut start = state.start_date.lock().unwrap();
+        *start = Some(start_date);
+    }
+    {
+        let mut end = state.end_date.lock().unwrap();
+        *end = Some(end_date);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_time_remaining(state: State<'_, NotificationState>) -> Result<TimeRemaining, String> {
+    let start_date = state.start_date.lock().unwrap().clone();
+    let end_date = state.end_date.lock().unwrap().clone();
+    
+    if let (Some(start), Some(end)) = (start_date, end_date) {
+        let now = chrono::Utc::now();
+        let start_time = chrono::DateTime::parse_from_rfc3339(&start)
+            .map_err(|e| format!("Invalid start date: {}", e))?;
+        let end_time = chrono::DateTime::parse_from_rfc3339(&end)
+            .map_err(|e| format!("Invalid end date: {}", e))?;
+        
+        let time_remaining = (end_time.with_timezone(&Utc) - now).num_milliseconds();
+        
+        if time_remaining <= 0 {
+            return Ok(TimeRemaining {
+                days: 0,
+                hours: 0,
+                minutes: 0,
+                seconds: 0,
+                total_ms: 0,
+                is_expired: true,
+            });
+        }
+        
+        let total_seconds = time_remaining / 1000;
+        let days = total_seconds / (24 * 60 * 60);
+        let hours = (total_seconds % (24 * 60 * 60)) / (60 * 60);
+        let minutes = (total_seconds % (60 * 60)) / 60;
+        let seconds = total_seconds % 60;
+        
+        Ok(TimeRemaining {
+            days,
+            hours,
+            minutes,
+            seconds,
+            total_ms: time_remaining,
+            is_expired: false,
+        })
+    } else {
+        Err("Timer dates not set".to_string())
+    }
 }
 
 #[tauri::command]
@@ -52,6 +129,8 @@ async fn start_notifications(
     // Start new notification task
     let app_clone = app.clone();
     let is_enabled_clone = state.is_enabled.clone();
+    let start_date_clone = state.start_date.clone();
+    let end_date_clone = state.end_date.clone();
     
     let task = tokio::spawn(async move {
         let mut interval = interval(Duration::from_secs(6 * 60 * 60)); // 6 hours
@@ -67,12 +146,49 @@ async fn start_notifications(
                 }
             }
             
+            // Get time remaining for notification
+            let notification_body = {
+                let start_date = start_date_clone.lock().unwrap().clone();
+                let end_date = end_date_clone.lock().unwrap().clone();
+                
+                if let (Some(start), Some(end)) = (start_date, end_date) {
+                    if let (Ok(start_time), Ok(end_time)) = (
+                        DateTime::parse_from_rfc3339(&start),
+                        DateTime::parse_from_rfc3339(&end)
+                    ) {
+                        let now = Utc::now();
+                        let time_remaining = (end_time.with_timezone(&Utc) - now).num_milliseconds();
+                        
+                        if time_remaining <= 0 {
+                            "⏰ Time's up! Your hourglass has run out of sand.".to_string()
+                        } else {
+                            let total_seconds = time_remaining / 1000;
+                            let days = total_seconds / (24 * 60 * 60);
+                            let hours = (total_seconds % (24 * 60 * 60)) / (60 * 60);
+                            let minutes = (total_seconds % (60 * 60)) / 60;
+                            
+                            if days > 0 {
+                                format!("⏳ Time remaining: {} days, {} hours, {} minutes", days, hours, minutes)
+                            } else if hours > 0 {
+                                format!("⏳ Time remaining: {} hours, {} minutes", hours, minutes)
+                            } else {
+                                format!("⏳ Time remaining: {} minutes", minutes)
+                            }
+                        }
+                    } else {
+                        "⏳ Time keeps flowing... Check your hourglass progress!".to_string()
+                    }
+                } else {
+                    "⏳ Time keeps flowing... Set your dates to see time remaining!".to_string()
+                }
+            };
+            
             // Send notification
             if let Err(e) = app_clone
                 .notification()
                 .builder()
                 .title("Hourglass Reminder")
-                .body("Time keeps flowing... Check your hourglass progress!")
+                .body(&notification_body)
                 .show()
             {
                 eprintln!("Failed to send notification: {}", e);
@@ -174,6 +290,8 @@ fn main() {
             start_notifications,
             stop_notifications,
             send_test_notification,
+            set_timer_dates,
+            get_time_remaining,
             get_startup_enabled,
             enable_startup,
             disable_startup

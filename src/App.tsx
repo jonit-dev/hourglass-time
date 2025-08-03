@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { HourglassScene } from './components/HourglassScene';
 import { DateInput } from './components/DateInput';
 import { CountdownDisplay } from './components/CountdownDisplay';
 import NotificationControls from './components/NotificationControls';
 import { useCountdown } from './hooks/useCountdown';
 import { Hourglass, Sparkles } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
 
 function App() {
   // Calculate default dates: June 27th, 2025 and 48 weeks later
@@ -23,6 +24,26 @@ function App() {
   const [endDate, setEndDate] = useState(defaultDates.end);
   
   const { timeLeft, isActive, isExpired, progress } = useCountdown(startDate, endDate);
+
+  // Sync dates with backend when they change
+  useEffect(() => {
+    if (startDate && endDate) {
+      const syncDates = async () => {
+        try {
+          // Convert to ISO format for backend
+          const startISO = new Date(startDate).toISOString();
+          const endISO = new Date(endDate).toISOString();
+          await invoke('set_timer_dates', { 
+            startDate: startISO, 
+            endDate: endISO 
+          });
+        } catch (error) {
+          console.error('Failed to sync dates with backend:', error);
+        }
+      };
+      syncDates();
+    }
+  }, [startDate, endDate]);
 
   // Get current datetime for min values
   const now = new Date();
