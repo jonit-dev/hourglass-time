@@ -38,9 +38,18 @@ impl Default for NotificationState {
     }
 }
 
+fn calculate_time_components(time_remaining_ms: i64) -> (i64, i64, i64, i64) {
+    let total_seconds = time_remaining_ms / 1000;
+    let days = total_seconds / (24 * 60 * 60);
+    let hours = (total_seconds % (24 * 60 * 60)) / (60 * 60);
+    let minutes = (total_seconds % (60 * 60)) / 60;
+    let seconds = total_seconds % 60;
+    (days, hours, minutes, seconds)
+}
+
 #[tauri::command]
 async fn get_notification_status(state: State<'_, NotificationState>) -> Result<bool, String> {
-    let is_enabled = state.is_enabled.lock().unwrap();
+    let is_enabled = state.is_enabled.lock().map_err(|e| format!("Failed to lock notification state: {}", e))?;
     Ok(*is_enabled)
 }
 
@@ -50,12 +59,18 @@ async fn set_timer_dates(
     start_date: String,
     end_date: String
 ) -> Result<(), String> {
+    // Validate date formats before storing
+    chrono::DateTime::parse_from_rfc3339(&start_date)
+        .map_err(|e| format!("Invalid start date format: {}", e))?;
+    chrono::DateTime::parse_from_rfc3339(&end_date)
+        .map_err(|e| format!("Invalid end date format: {}", e))?;
+    
     {
-        let mut start = state.start_date.lock().unwrap();
+        let mut start = state.start_date.lock().map_err(|e| format!("Failed to lock start date: {}", e))?;
         *start = Some(start_date);
     }
     {
-        let mut end = state.end_date.lock().unwrap();
+        let mut end = state.end_date.lock().map_err(|e| format!("Failed to lock end date: {}", e))?;
         *end = Some(end_date);
     }
     Ok(())
@@ -63,10 +78,10 @@ async fn set_timer_dates(
 
 #[tauri::command]
 async fn get_time_remaining(state: State<'_, NotificationState>) -> Result<TimeRemaining, String> {
-    let start_date = state.start_date.lock().unwrap().clone();
-    let end_date = state.end_date.lock().unwrap().clone();
+    let start_date = state.start_date.lock().map_err(|e| format!("Failed to lock start date: {}", e))?.clone();
+    let end_date = state.end_date.lock().map_err(|e| format!("Failed to lock end date: {}", e))?.clone();
     
-    if let (Some(start), Some(end)) = (start_date, end_date) {
+    if let (Some(_), Some(end)) = (start_date, end_date) {
         let now = chrono::Utc::now();
         let end_time = chrono::DateTime::parse_from_rfc3339(&end)
             .map_err(|e| format!("Invalid end date: {}", e))?;
@@ -84,11 +99,7 @@ async fn get_time_remaining(state: State<'_, NotificationState>) -> Result<TimeR
             });
         }
         
-        let total_seconds = time_remaining / 1000;
-        let days = total_seconds / (24 * 60 * 60);
-        let hours = (total_seconds % (24 * 60 * 60)) / (60 * 60);
-        let minutes = (total_seconds % (60 * 60)) / 60;
-        let seconds = total_seconds % 60;
+        let (days, hours, minutes, seconds) = calculate_time_components(time_remaining);
         
         Ok(TimeRemaining {
             days,
@@ -108,17 +119,18 @@ async fn start_notifications(
     app: AppHandle,
     state: State<'_, NotificationState>,
 ) -> Result<(), String> {
-    let mut is_enabled = state.is_enabled.lock().unwrap();
-    if *is_enabled {
-        return Ok(()); // Already enabled
+    // Check and set enabled status atomically to prevent race conditions
+    {
+        let mut is_enabled = state.is_enabled.lock().map_err(|e| format!("Failed to lock notification state: {}", e))?;
+        if *is_enabled {
+            return Ok(()); // Already enabled
+        }
+        *is_enabled = true;
     }
-    
-    *is_enabled = true;
-    drop(is_enabled);
 
     // Stop any existing notification task
     {
-        let mut handle = state.handle.lock().unwrap();
+        let mut handle = state.handle.lock().map_err(|e| format!("Failed to lock task handle: {}", e))?;
         if let Some(task) = handle.take() {
             task.abort();
         }
@@ -138,18 +150,37 @@ async fn start_notifications(
             
             // Check if notifications are still enabled
             {
-                let enabled = is_enabled_clone.lock().unwrap();
-                if !*enabled {
-                    break;
+                match is_enabled_clone.lock() {
+                    Ok(enabled_guard) => {
+                        if !*enabled_guard {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to lock notification state in task: {}", e);
+                        break; // Exit on lock failure
+                    }
                 }
             }
             
             // Get time remaining for notification
             let notification_body = {
-                let start_date = start_date_clone.lock().unwrap().clone();
-                let end_date = end_date_clone.lock().unwrap().clone();
+                let start_date = match start_date_clone.lock() {
+                    Ok(guard) => guard.clone(),
+                    Err(_) => {
+                        eprintln!("Failed to lock start date in notification task");
+                        continue;
+                    }
+                };
+                let end_date = match end_date_clone.lock() {
+                    Ok(guard) => guard.clone(),
+                    Err(_) => {
+                        eprintln!("Failed to lock end date in notification task");
+                        continue;
+                    }
+                };
                 
-                if let (Some(start), Some(end)) = (start_date, end_date) {
+                if let (Some(_), Some(end)) = (start_date, end_date) {
                     if let Ok(end_time) = DateTime::parse_from_rfc3339(&end) {
                         let now = Utc::now();
                         let time_remaining = (end_time.with_timezone(&Utc) - now).num_milliseconds();
@@ -157,10 +188,7 @@ async fn start_notifications(
                         if time_remaining <= 0 {
                             "⏰ Time's up! Your hourglass has run out of sand.".to_string()
                         } else {
-                            let total_seconds = time_remaining / 1000;
-                            let days = total_seconds / (24 * 60 * 60);
-                            let hours = (total_seconds % (24 * 60 * 60)) / (60 * 60);
-                            let minutes = (total_seconds % (60 * 60)) / 60;
+                            let (days, hours, minutes, _) = calculate_time_components(time_remaining);
                             
                             if days > 0 {
                                 format!("⏳ Time remaining: {} days, {} hours, {} minutes", days, hours, minutes)
@@ -193,7 +221,7 @@ async fn start_notifications(
 
     // Store the task handle
     {
-        let mut handle = state.handle.lock().unwrap();
+        let mut handle = state.handle.lock().map_err(|e| format!("Failed to lock task handle: {}", e))?;
         *handle = Some(task);
     }
 
@@ -202,14 +230,17 @@ async fn start_notifications(
 
 #[tauri::command]
 async fn stop_notifications(state: State<'_, NotificationState>) -> Result<(), String> {
-    let mut is_enabled = state.is_enabled.lock().unwrap();
-    *is_enabled = false;
-    drop(is_enabled);
+    {
+        let mut is_enabled = state.is_enabled.lock().map_err(|e| format!("Failed to lock notification state: {}", e))?;
+        *is_enabled = false;
+    }
 
     // Stop the notification task
-    let mut handle = state.handle.lock().unwrap();
-    if let Some(task) = handle.take() {
-        task.abort();
+    {
+        let mut handle = state.handle.lock().map_err(|e| format!("Failed to lock task handle: {}", e))?;
+        if let Some(task) = handle.take() {
+            task.abort();
+        }
     }
 
     Ok(())
@@ -227,51 +258,34 @@ async fn send_test_notification(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-async fn get_startup_enabled() -> Result<bool, String> {
+fn create_auto_launch() -> Result<auto_launch::AutoLaunch, String> {
     let exe_path = std::env::current_exe()
-        .map_err(|e| e.to_string())?
+        .map_err(|e| format!("Failed to get executable path: {}", e))?
         .to_string_lossy()
         .to_string();
     
-    let auto = AutoLaunchBuilder::new()
+    AutoLaunchBuilder::new()
         .set_app_name("Hourglass")
         .set_app_path(&exe_path)
         .build()
-        .map_err(|e| e.to_string())?;
-    
+        .map_err(|e| format!("Failed to create auto launch: {}", e))
+}
+
+#[tauri::command]
+async fn get_startup_enabled() -> Result<bool, String> {
+    let auto = create_auto_launch()?;
     auto.is_enabled().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 async fn enable_startup() -> Result<(), String> {
-    let exe_path = std::env::current_exe()
-        .map_err(|e| e.to_string())?
-        .to_string_lossy()
-        .to_string();
-    
-    let auto = AutoLaunchBuilder::new()
-        .set_app_name("Hourglass")
-        .set_app_path(&exe_path)
-        .build()
-        .map_err(|e| e.to_string())?;
-    
+    let auto = create_auto_launch()?;
     auto.enable().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 async fn disable_startup() -> Result<(), String> {
-    let exe_path = std::env::current_exe()
-        .map_err(|e| e.to_string())?
-        .to_string_lossy()
-        .to_string();
-    
-    let auto = AutoLaunchBuilder::new()
-        .set_app_name("Hourglass")
-        .set_app_path(&exe_path)
-        .build()
-        .map_err(|e| e.to_string())?;
-    
+    let auto = create_auto_launch()?;
     auto.disable().map_err(|e| e.to_string())
 }
 
