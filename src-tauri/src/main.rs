@@ -68,8 +68,6 @@ async fn get_time_remaining(state: State<'_, NotificationState>) -> Result<TimeR
     
     if let (Some(start), Some(end)) = (start_date, end_date) {
         let now = chrono::Utc::now();
-        let start_time = chrono::DateTime::parse_from_rfc3339(&start)
-            .map_err(|e| format!("Invalid start date: {}", e))?;
         let end_time = chrono::DateTime::parse_from_rfc3339(&end)
             .map_err(|e| format!("Invalid end date: {}", e))?;
         
@@ -152,10 +150,7 @@ async fn start_notifications(
                 let end_date = end_date_clone.lock().unwrap().clone();
                 
                 if let (Some(start), Some(end)) = (start_date, end_date) {
-                    if let (Ok(start_time), Ok(end_time)) = (
-                        DateTime::parse_from_rfc3339(&start),
-                        DateTime::parse_from_rfc3339(&end)
-                    ) {
+                    if let Ok(end_time) = DateTime::parse_from_rfc3339(&end) {
                         let now = Utc::now();
                         let time_remaining = (end_time.with_timezone(&Utc) - now).num_milliseconds();
                         
